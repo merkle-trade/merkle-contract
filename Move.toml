@@ -1,0 +1,14 @@
+[package]
+name = 'merkle'
+version = '1.0.0'
+
+[addresses]
+std = "0x1"
+aptos_std = "0x1"
+aptos_framework = "0x1"
+merkle = "0x858d497bc001b3246e013e6005f747afe2de194b299bb38af2c037eb8b2be160"
+switchboard = "0xb91d3fef0eeb4e685dc85e739c7d3e2968784945be4424e92e2f86e2418bf271"
+
+[dependencies]
+Switchboard = { git = "https://github.com/switchboard-xyz/sbv2-aptos.git", subdir = "move/switchboard/", rev = "main" }
+AptosFramework = { git = 'https://github.com/aptos-labs/aptos-core.git', subdir = 'aptos-move/framework/aptos-framework', rev = 'main' }
