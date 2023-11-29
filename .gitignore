@@ -1,6 +1,8 @@
-build/
-.vscode/
 .env
 .idea
 .aptos
+.trace
+.coverage_map.mvcov
+.vscode/
 docs/
+build/

@@ -2,13 +2,20 @@
 name = 'merkle'
 version = '1.0.0'
 
+# Tsetnet
 [addresses]
 std = "0x1"
 aptos_std = "0x1"
 aptos_framework = "0x1"
-merkle = "0x858d497bc001b3246e013e6005f747afe2de194b299bb38af2c037eb8b2be160"
+merkle = "0x9296ee4fabe8ececd77aea6f8f29b1c01883b6987d6b3a4b079a2dd43332c95e"
 switchboard = "0xb91d3fef0eeb4e685dc85e739c7d3e2968784945be4424e92e2f86e2418bf271"
+pyth = "0x7e783b349d3e89cf5931af376ebeadbfab855b3fa239b7ada8f5a92fbea6b387"
+deployer = "0xb31e712b26fd295357355f6845e77c888298636609e93bc9b05f0f604049f434"
+wormhole = "0x5bc11445584a763c1fa7ed39081f1b920954da14e04b32440cba863d03e19625"
 
 [dependencies]
-Switchboard = { git = "https://github.com/switchboard-xyz/sbv2-aptos.git", subdir = "move/switchboard/", rev = "main" }
-AptosFramework = { git = 'https://github.com/aptos-labs/aptos-core.git', subdir = 'aptos-move/framework/aptos-framework', rev = 'main' }
+AptosFramework = { git = 'https://github.com/aptos-labs/aptos-core.git', subdir = 'aptos-move/framework/aptos-framework', rev = '83250343e09f10e56f6ddbd8019f6d4634488349' }
+AptosToken = { git = "https://github.com/aptos-labs/aptos-core.git", subdir = "aptos-move/framework/aptos-token/", rev = "8244cda0130337e8c864f6f6fbc33b0a510e97cf" }
+AptosStdlib = { git = "https://github.com/aptos-labs/aptos-core.git", subdir = "aptos-move/framework/aptos-stdlib/", rev = "c613c43577b42fa657321f6faab2855c3ace3052" }
+Pyth = { git = "https://github.com/pyth-network/pyth-crosschain.git", subdir = "target_chains/aptos/contracts", rev = "7dea57841684aaf9bd7c0ba6ae6faa0e8870891b" }
+Switchboard = { git = "https://github.com/switchboard-xyz/sbv2-aptos.git", subdir = "move/switchboard/", rev = "af84bf42309e487fe97ac9cc0f6711038cf53355" }
