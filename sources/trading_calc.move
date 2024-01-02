@@ -249,7 +249,7 @@ module merkle::trading_calc {
             let flipped_maker_rate = PRECISION - flipped_taker_rate;
             let taker_fee = safe_mul_div(safe_mul_div(_size_delta, flipped_taker_rate, PRECISION), _taker_rate, MAKER_TAKER_FEE_PRECISION);
             let maker_fee = safe_mul_div(safe_mul_div(_size_delta, flipped_maker_rate, PRECISION), _maker_rate, MAKER_TAKER_FEE_PRECISION);
-            fee = taker_fee + maker_fee
+            fee = taker_fee + maker_fee;
         };
         return fee
     }
@@ -346,6 +346,24 @@ module merkle::trading_calc {
             latest_funding_rate_positive
         );
         (funding_fee_per_size, funding_fee_per_size_positive)
+    }
+
+    public fun calculate_pmkl_amount(
+        size: u64,
+        maker_fee: u64,
+        taker_fee: u64,
+        gear_effect: u64,
+    ): u64 {
+        // 5 * size * (maker_fee + taker_fee) / 2 * gear_effect
+        safe_mul_div(
+            safe_mul_div(
+                5 * size,
+                (maker_fee + taker_fee) / 2,
+                MAKER_TAKER_FEE_PRECISION
+            ),
+            PRECISION + gear_effect,
+            PRECISION
+        )
     }
 
     #[test]
@@ -697,4 +715,5 @@ module merkle::trading_calc {
         );
         assert!(r == 13, 0);
     }
+
 }

@@ -7,6 +7,9 @@ module merkle::pyth_scripts {
     use pyth::price;
     use pyth::price_identifier;
 
+    /// When the pyth price feed does not exist
+    const E_PYTH_PRICE_FEED_DOES_NOT_EXIST: u64 = 0;
+
     /// update pyth price data
     public fun update_pyth(host: &signer, pyth_vaa: vector<u8>) {
         let update_data = vector::empty<vector<u8>>();
@@ -31,5 +34,11 @@ module merkle::pyth_scripts {
             expo,
             price::get_timestamp(&pyth_price)
         )
+    }
+
+    public fun get_price_for_random(pyth_price_identifier: vector<u8>): u64 {
+        let price_id = price_identifier::from_byte_vec(pyth_price_identifier);
+        assert!(pyth::price_feed_exists(price_id), E_PYTH_PRICE_FEED_DOES_NOT_EXIST);
+        i64::get_magnitude_if_positive(&price::get_price(&pyth::get_price_unsafe(price_id)))
     }
 }

@@ -165,6 +165,24 @@ module merkle::house_lp {
         }
     }
 
+    public fun deposit_without_mint<AssetT>(_user: &signer, _amount: u64) acquires HouseLP, HouseLPEvents {
+        assert!(address_of(_user) == @merkle, E_NOT_AUTHORIZED);
+
+        let deposit_coin = coin::withdraw<AssetT>(_user, _amount);
+        // Put the deposited collateral into the vault.
+        vault::deposit_vault<vault_type::HouseLPVault, AssetT>(deposit_coin);
+        update_highest_price<AssetT>();
+
+        let deposit_event = DepositEvent {
+            asset_type: type_info::type_of<AssetT>(),
+            user: address_of(_user),
+            deposit_amount: _amount,
+            mint_amount: 0,
+            deposit_fee: 0
+        };
+        event::emit_event(&mut borrow_global_mut<HouseLPEvents>(@merkle).deposit_events, deposit_event);
+    }
+
     /// Functions to deposit collateral and receive MKLP
     /// @Type Parameters
     /// AssetT: collateral type

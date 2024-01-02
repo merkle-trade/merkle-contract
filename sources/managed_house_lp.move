@@ -8,6 +8,10 @@ module merkle::managed_house_lp {
         house_lp::register<AssetT>(host);
     }
 
+    public entry fun deposit_without_mint<AssetT>(_user: &signer, _amount: u64) {
+        house_lp::deposit_without_mint<AssetT>(_user, _amount);
+    }
+
     public entry fun deposit<AssetT>(_user: &signer, _amount: u64) {
         house_lp::deposit<AssetT>(_user, _amount);
     }

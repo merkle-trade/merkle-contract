@@ -11,6 +11,8 @@ module merkle::trading {
     use aptos_framework::coin;
     use aptos_framework::timestamp;
     use aptos_framework::account::new_event_handle;
+    use merkle::gear;
+    use merkle::pMKL;
 
     use merkle::house_lp;
     use merkle::vault;
@@ -19,19 +21,10 @@ module merkle::trading {
     use merkle::trading_calc;
     use merkle::fee_distributor;
     use merkle::safe_math_u64::{safe_mul_div, min, max, abs};
-    use merkle::trading_calc::{calculate_settle_amount, calculate_partial_close_amounts, calculate_risk_fees, calculate_maker_taker_fee};
+    use merkle::trading_calc::{calculate_settle_amount, calculate_pmkl_amount, calculate_partial_close_amounts, calculate_risk_fees,
+        calculate_maker_taker_fee
+    };
     use merkle::profile;
-
-    #[test_only]
-    use std::string;
-    #[test_only]
-    use aptos_framework::aptos_account;
-    #[test_only]
-    use aptos_framework::aptos_coin;
-    #[test_only]
-    use aptos_framework::coin::{BurnCapability, MintCapability};
-    #[test_only]
-    use merkle::lootbox;
 
     // <-- PRECISION ----->
 
@@ -41,10 +34,12 @@ module merkle::trading {
     const MAKER_TAKER_FEE_PRECISION: u64 = 1000000;
     /// interest_precision 10000 => 1%
     const INTEREST_PRECISION: u64 = 1000000;
-    /// leverage_precision 10000 => 1%
+    /// leverage_precision 1000000 => x1
     const LEVERAGE_PRECISION: u64 = 1000000;
     /// basis point 1e4 => 1
     const BASIS_POINT: u64 = 10000;
+    /// effect precision 1000000 = 100%
+    const EFFECT_PRECISION: u64 = 1000000;
 
     // <-- ERROR CODE ----->
 
@@ -793,6 +788,9 @@ module merkle::trading {
             _order.is_long,
             _order.is_increase
         );
+        let fee_discount_effect = gear::get_fee_discount_effect<PairType>(_order.user, true);
+        let discount_fee = safe_mul_div(entry_fee, fee_discount_effect, EFFECT_PRECISION);
+        let entry_fee = entry_fee - discount_fee;
 
         // max open interest check
         let new_open_interest = _order.size_delta + if (_order.is_long) { _pair_state.long_open_interest } else { _pair_state.short_open_interest } ;
@@ -807,13 +805,13 @@ module merkle::trading {
         };
         assert!(new_collateral >= _pair_info.minimum_position_collateral, E_POSITION_COLLATERAL_TOO_SMALL);
         assert!(new_collateral <= _pair_info.maximum_position_collateral, E_POSITION_COLLATERAL_TOO_LARGE);
-        // leverage add / sub padding 1 because of float diff fault
+        // +- 0.1x leverage buffer
         assert!(
-            safe_mul_div(new_position_size, LEVERAGE_PRECISION, new_collateral) >= _pair_info.min_leverage - 1,
+            safe_mul_div(new_position_size, LEVERAGE_PRECISION, new_collateral) >= _pair_info.min_leverage - LEVERAGE_PRECISION / 10,
             E_UNDER_MINIMUM_LEVEREAGE
         );
         assert!(
-            safe_mul_div(new_position_size, LEVERAGE_PRECISION, new_collateral) <= _pair_info.max_leverage + 1,
+            safe_mul_div(new_position_size, LEVERAGE_PRECISION, new_collateral) <= _pair_info.max_leverage + LEVERAGE_PRECISION / 10,
             E_OVER_MAXIMUM_LEVEREAGE
         );
     }
@@ -988,15 +986,18 @@ module merkle::trading {
             position_ref_mut.acc_funding_fee_per_size,
             position_ref_mut.acc_funding_fee_per_size_positive
         );
-        let exit_fee = calculate_maker_taker_fee(
+        let original_exit_fee = calculate_maker_taker_fee(
             pair_state.long_open_interest,
             pair_state.short_open_interest,
             pair_info.maker_fee,
             pair_info.taker_fee,
             position_ref_mut.size,
             _is_long,
-            false
+            false,
         );
+        let fee_discount_effect = gear::get_fee_discount_effect<PairType>(_user, true);
+        let discount_fee = safe_mul_div(original_exit_fee, fee_discount_effect, EFFECT_PRECISION);
+        let exit_fee = original_exit_fee - discount_fee;
 
         // Settle profit and loss and fee & Repay collateral to user
         let pnl_without_fee: u64;
@@ -1051,6 +1052,7 @@ module merkle::trading {
             // exit fee
             exit_fee = min(exit_fee, position_ref_mut.collateral);
             position_ref_mut.collateral = position_ref_mut.collateral - exit_fee;
+
             // Deposit exit fee to distributor
             fee_distributor::deposit_fee_with_rebate(
                 vault::withdraw_vault<vault_type::CollateralVault, CollateralType>(exit_fee),
@@ -1080,8 +1082,16 @@ module merkle::trading {
             assert!(is_executable, E_NOT_OVER_THRESHOLD);
         };
 
+        // mint pmkl
+        let mint_pmkl_amount = calculate_pmkl_amount(
+            position_ref_mut.size,
+            pair_info.maker_fee,
+            pair_info.taker_fee,
+            gear::get_pmkl_boost_effect<PairType>(_user, true)
+        );
+        pMKL::mint_pmkl(_user, mint_pmkl_amount);
         // increase xp
-        profile::increase_xp(_user, exit_fee * 100);
+        profile::increase_xp<PairType>(_user, original_exit_fee * 100);
 
         // Store position state
         {
@@ -1265,15 +1275,18 @@ module merkle::trading {
             position_ref_mut.acc_funding_fee_per_size,
             position_ref_mut.acc_funding_fee_per_size_positive
         );
-        let entry_fee = calculate_maker_taker_fee(
+        let original_entry_fee = calculate_maker_taker_fee(
             _pair_state.long_open_interest,
             _pair_state.short_open_interest,
             _pair_info.maker_fee,
             _pair_info.taker_fee,
             _order.size_delta,
             _order.is_long,
-            _order.is_increase
+            _order.is_increase,
         );
+        let fee_discount_effect = gear::get_fee_discount_effect<PairType>(_order.user, true);
+        let discount_fee = safe_mul_div(original_entry_fee, fee_discount_effect, EFFECT_PRECISION);
+        let entry_fee = original_entry_fee - discount_fee;
 
         _order.collateral_delta = _order.collateral_delta - entry_fee;
         if (_order.collateral_delta > _pair_info.maximum_position_collateral) {
@@ -1286,12 +1299,25 @@ module merkle::trading {
         };
 
         // deposit entry fee to fee_distributor
+        // entry fee
         fee_distributor::deposit_fee_with_rebate(
             vault::withdraw_vault<vault_type::CollateralVault, CollateralType>(entry_fee),
             _order.user
         );
-        profile::increase_xp(_order.user, entry_fee * 100);
-        profile::add_daily_boost(_order.user);
+        // mint pmkl
+        let mint_pmkl_amount = calculate_pmkl_amount(
+            _order.size_delta,
+            _pair_info.maker_fee,
+            _pair_info.taker_fee,
+            gear::get_pmkl_boost_effect<PairType>(_order.user, true)
+        );
+        pMKL::mint_pmkl(_order.user, mint_pmkl_amount);
+        // increase xp
+        profile::increase_xp<PairType>(_order.user, original_entry_fee * 100);
+
+        if (event_type == T_POSITION_OPEN) {
+            profile::add_daily_boost(_order.user);
+        };
 
         // Take position's cumulative risk fees
         if (is_risk_fee_profit) {
@@ -1353,7 +1379,6 @@ module merkle::trading {
         };
 
         // leverage check
-        // leverage add / sub padding 1 because of float diff fault
         position_ref_mut.size = max(
             position_ref_mut.size,
             safe_mul_div(position_ref_mut.collateral, _pair_info.min_leverage, LEVERAGE_PRECISION)
@@ -1483,15 +1508,18 @@ module merkle::trading {
             position_ref_mut.acc_funding_fee_per_size,
             position_ref_mut.acc_funding_fee_per_size_positive
         );
-        let exit_fee = calculate_maker_taker_fee(
+        let original_exit_fee = calculate_maker_taker_fee(
             _pair_state.long_open_interest,
             _pair_state.short_open_interest,
             _pair_info.maker_fee,
             _pair_info.taker_fee,
             _order.size_delta,
             _order.is_long,
-            _order.is_increase
+            _order.is_increase,
         );
+        let fee_discount_effect = gear::get_fee_discount_effect<PairType>(_order.user, true);
+        let discount_fee = safe_mul_div(original_exit_fee, fee_discount_effect, EFFECT_PRECISION);
+        let exit_fee = original_exit_fee - discount_fee;
 
         // Calculate pnl
         let (pnl_without_fee, is_profit) = trading_calc::calculate_pnl_without_fee(
@@ -1553,13 +1581,14 @@ module merkle::trading {
                 new_collateral = position_ref_mut.collateral - decrease_collateral;
                 new_leverage = safe_mul_div(position_ref_mut.size - _order.size_delta, LEVERAGE_PRECISION, new_collateral);
             };
+            // +- 0.1x leverage buffer
             if (new_collateral == 0 ||
-                new_leverage < _pair_info.min_leverage ||
-                new_leverage > _pair_info.max_leverage) {
+                new_leverage < _pair_info.min_leverage - LEVERAGE_PRECISION / 10 ||
+                new_leverage > _pair_info.max_leverage + LEVERAGE_PRECISION / 10) {
                 let cancel_order_event_type = T_CANCEL_ORDER_NOT_ENOUGH_COLLATERAL;
-                if (new_leverage < _pair_info.min_leverage) {
+                if (new_leverage < _pair_info.min_leverage - LEVERAGE_PRECISION / 10) {
                     cancel_order_event_type = T_CANCEL_ORDER_UNDER_MIN_LEVERAGE;
-                } else if (new_leverage > _pair_info.max_leverage) {
+                } else if (new_leverage > _pair_info.max_leverage + LEVERAGE_PRECISION / 10) {
                     cancel_order_event_type = T_CANCEL_ORDER_OVER_MAX_LEVERAGE;
                 };
                 cancel_order_internal<PairType, CollateralType>(
@@ -1576,7 +1605,16 @@ module merkle::trading {
             vault::withdraw_vault<vault_type::CollateralVault, CollateralType>(exit_fee),
             _order.user
         );
-        profile::increase_xp(_order.user, exit_fee * 100);
+        // mint pmkl
+        let mint_pmkl_amount = calculate_pmkl_amount(
+            _order.size_delta,
+            _pair_info.maker_fee,
+            _pair_info.taker_fee,
+            gear::get_pmkl_boost_effect<PairType>(_order.user, true)
+        );
+        pMKL::mint_pmkl(_order.user, mint_pmkl_amount);
+        // increase xp
+        profile::increase_xp<PairType>(_order.user, original_exit_fee * 100);
 
         // calculate assets
         if (is_deposit_to_lp) {
@@ -1603,6 +1641,8 @@ module merkle::trading {
             position_ref_mut.last_execute_timestamp = timestamp::now_seconds();
             position_ref_mut.size = position_ref_mut.size - _order.size_delta;
             position_ref_mut.collateral = new_collateral;
+            position_ref_mut.acc_funding_fee_per_size = _pair_state.acc_funding_fee_per_size;
+            position_ref_mut.acc_funding_fee_per_size_positive = _pair_state.acc_funding_fee_per_size_positive;
         };
 
         // Store trading pair state
@@ -1993,12 +2033,27 @@ module merkle::trading {
 
     #[test_only]
     struct TestPair has key, store, drop {}
-
     #[test_only]
     struct TEST_USDC has store, drop {}
 
     #[test_only]
+    use std::string;
+    #[test_only]
+    use aptos_framework::aptos_account;
+    #[test_only]
+    use aptos_framework::aptos_coin;
+    #[test_only]
+    use aptos_framework::coin::{BurnCapability, MintCapability};
+    #[test_only]
+    use merkle::lootbox_v2;
+    #[test_only]
     use merkle::referral;
+    #[test_only]
+    use merkle::random;
+    #[test_only]
+    use aptos_framework::account;
+    #[test_only]
+    use merkle::season;
 
     #[test_only]
     struct CapStore has key {
@@ -2029,7 +2084,9 @@ module merkle::trading {
     fun call_test_setting(host: &signer, aptos_framework: &signer)
     : (ExecuteCapability<TestPair, TEST_USDC>, AdminCapability<TestPair, TEST_USDC>) acquires PairInfo {
         timestamp::set_time_has_started_for_testing(aptos_framework);
-        aptos_account::create_account(address_of(host));
+        if (!account::exists_at(address_of(host))) {
+            aptos_account::create_account(address_of(host));
+        };
         price_oracle::register_oracle<TestPair>(host);
 
         vault::register_vault<vault_type::CollateralVault, TEST_USDC>(host);
@@ -2046,6 +2103,8 @@ module merkle::trading {
         set_max_leverage(100 * LEVERAGE_PRECISION, &admin_cap);
         set_minimum_order_collateral(10, &admin_cap);
         set_minimum_position_collateral(100, &admin_cap);
+        set_skew_factor(100000000000000, &admin_cap);
+        set_max_funding_velocity(1000000000, &admin_cap);
         create_test_coins<TEST_USDC>(host, b"USDC", 8, 10000000 * 100000000);
         house_lp::register<TEST_USDC>(host);
         house_lp::deposit<TEST_USDC>(host, 1000000 * 1000000);
@@ -2056,7 +2115,11 @@ module merkle::trading {
         fee_distributor::set_stake_weight<TEST_USDC>(host, 2);
 
         profile::init_module_for_test(host);
-        lootbox::init_module_for_test(host);
+        lootbox_v2::init_module_for_test(host);
+        gear::initialize_module(host);
+        season::initialize_module(host);
+        pMKL::initialize_module(host);
+        random::initialize_module(host);
 
         referral::call_test_setting<TEST_USDC>(host, aptos_framework);
 
@@ -2066,7 +2129,9 @@ module merkle::trading {
     #[test(host = @merkle, aptos_framework = @aptos_framework)]
     /// Test initialize
     fun T_initialize(host: &signer, aptos_framework: &signer) {
-        aptos_account::create_account(address_of(host));
+        if (!account::exists_at(address_of(host))) {
+            aptos_account::create_account(address_of(host));
+        };
         timestamp::set_time_has_started_for_testing(aptos_framework);
         initialize<TestPair, TEST_USDC>(
             host
@@ -3179,5 +3244,97 @@ module merkle::trading {
             let pair_state = borrow_global_mut<PairState<TestPair, TEST_USDC>>(@merkle);
             assert!(pair_state.long_open_interest == 0, 0);
         };
+    }
+
+    #[test(host = @merkle, aptos_framework = @aptos_framework)]
+    fun T_partial_close_funding_fee(host: &signer, aptos_framework: &signer)
+    acquires PairInfo, PairState, TradingEvents, UserTradingEvents, UserStates {
+        let (execute_cap, _) = call_test_setting(host, aptos_framework);
+        let coll_size = 1000 * 1000000;
+        let original_size = 50000 * 1000000;
+
+        place_order<TestPair, TEST_USDC>(host, original_size, coll_size, 300000, true, true, true, 0, 0, true);
+        execute_order<TestPair, TEST_USDC>(host, 1, 300000, vector::empty(), &execute_cap);
+        {
+            // accrue
+            timestamp::fast_forward_seconds(6000); // 100 mins
+            let pair_state = borrow_global_mut<PairState<TestPair, TEST_USDC>>(@merkle);
+            let pair_info = borrow_global_mut<PairInfo<TestPair, TEST_USDC>>(@merkle);
+            accrue(pair_info, pair_state);
+        };
+        {
+            let pair_state = borrow_global_mut<PairState<TestPair, TEST_USDC>>(@merkle);
+            let position = table::borrow(&mut pair_state.long_positions, address_of(host));
+            let (_,
+                _,
+                funding_fee,
+                _,
+                _) = calculate_risk_fees(
+                pair_state.acc_rollover_fee_per_collateral,
+                pair_state.acc_funding_fee_per_size,
+                pair_state.acc_funding_fee_per_size_positive,
+                position.size,
+                position.collateral,
+                true,
+                position.acc_rollover_fee_per_collateral,
+                position.acc_funding_fee_per_size,
+                position.acc_funding_fee_per_size_positive
+            );
+            assert!(funding_fee > 0, 0);
+        };
+        // partial close
+        place_order<TestPair, TEST_USDC>(host, original_size/2, coll_size/2, 300000, true, false, true, 0, 0, true);
+        execute_order<TestPair, TEST_USDC>(host, 2, 300000, vector::empty(), &execute_cap);
+        {
+            let pair_state = borrow_global_mut<PairState<TestPair, TEST_USDC>>(@merkle);
+            let position = table::borrow(&mut pair_state.long_positions, address_of(host));
+            let (_,
+                _,
+                funding_fee,
+                _,
+                _) = calculate_risk_fees(
+                pair_state.acc_rollover_fee_per_collateral,
+                pair_state.acc_funding_fee_per_size,
+                pair_state.acc_funding_fee_per_size_positive,
+                position.size,
+                position.collateral,
+                true,
+                position.acc_rollover_fee_per_collateral,
+                position.acc_funding_fee_per_size,
+                position.acc_funding_fee_per_size_positive
+            );
+            assert!(funding_fee == 0, 0);
+        };
+    }
+
+    #[test(host = @merkle, aptos_framework = @aptos_framework)]
+    fun T_gear_test(host: &signer, aptos_framework: &signer)
+    acquires PairInfo, PairState, TradingEvents, UserTradingEvents, UserStates {
+        let (execute_cap, _) = call_test_setting(host, aptos_framework);
+        let (pmkl_boost, fee_discount, xp_boost) = gear::T_mint_equip_gear(host, aptos_framework);
+
+        let coll_size = 10 * 1000000;
+        let original_size = 50 * 1000000;
+        place_order<TestPair, TEST_USDC>(host, original_size, coll_size, 300000, true, true, true, 0, 0, true);
+        execute_order<TestPair, TEST_USDC>(host, 1, 300000, vector::empty(), &execute_cap);
+
+        let pair_state = borrow_global<PairState<TestPair, TEST_USDC>>(@merkle);
+        let position = table::borrow(&pair_state.long_positions, address_of(host));
+        let original_fee = original_size / 1000;
+        let discount_fee = original_fee * fee_discount / 1000000;
+
+        assert!(coll_size - position.collateral == original_fee  - discount_fee, 0);
+
+        let (xp, _, _, _) = profile::get_level_info(address_of(host));
+        assert!(xp == (original_fee * 100 * (1000000 + xp_boost) / 1000000), 0);
+
+        let pair_info = borrow_global<PairInfo<TestPair, TEST_USDC>>(@merkle);
+        let pmkl_amount = pMKL::get_user_pmkl_balance(address_of(host), 1);
+        assert!(pmkl_amount == trading_calc::calculate_pmkl_amount(
+            original_size,
+            pair_info.maker_fee,
+            pair_info.taker_fee,
+            pmkl_boost
+        ), 0);
     }
 }

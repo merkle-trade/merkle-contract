@@ -179,6 +179,38 @@ module merkle::managed_trading {
         move_from<AdminCapabilityStore<PairType, CollateralType>>(target_address);
     }
 
+    /// Clean ExecuteCapability
+    /// Only allowed admin.
+    public entry fun clean_execute_cap<PairType, CollateralType>(
+        _host: &signer,
+    ) acquires ExecuteCapabilityCandidate {
+        assert!(address_of(_host) == @merkle, E_NOT_AUTHORIZED);
+        let candidates =
+            borrow_global_mut<ExecuteCapabilityCandidate<PairType, CollateralType>>(address_of(_host));
+        while(!vector::is_empty(&candidates.execute_cap_candidate)) {
+            vector::pop_back(&mut candidates.execute_cap_candidate);
+        };
+        while(!vector::is_empty(&candidates.execute_caps)) {
+            vector::pop_back(&mut candidates.execute_caps);
+        };
+    }
+
+    /// Clean AdminCapability
+    /// Only allowed admin.
+    public entry fun clean_admin_cap<PairType, CollateralType>(
+        _host: &signer,
+    ) acquires AdminCapabilityCandidate {
+        assert!(address_of(_host) == @merkle, E_NOT_AUTHORIZED);
+        let candidates =
+            borrow_global_mut<AdminCapabilityCandidate<PairType, CollateralType>>(address_of(_host));
+        while(!vector::is_empty(&candidates.admin_cap_candidate)) {
+            vector::pop_back(&mut candidates.admin_cap_candidate);
+        };
+        while(!vector::is_empty(&candidates.admin_caps)) {
+            vector::pop_back(&mut candidates.admin_caps);
+        };
+    }
+
     public entry fun place_order<PairType, CollateralType>(
         _user: &signer,
         _size_delta: u64,

@@ -281,6 +281,9 @@ module merkle::referral {
     use aptos_framework::aptos_account;
 
     #[test_only]
+    use aptos_framework::account;
+
+    #[test_only]
     use std::string;
 
     #[test_only]
@@ -308,7 +311,9 @@ module merkle::referral {
     #[test_only]
     public fun call_test_setting<AssetT>(host: &signer, aptos_framework: &signer) {
         timestamp::set_time_has_started_for_testing(aptos_framework);
-        aptos_account::create_account(address_of(host));
+        if (!account::exists_at(address_of(host))) {
+            aptos_account::create_account(address_of(host));
+        };
 
         init_module<AssetT>(host);
         vault::register_vault<vault_type::RebateVault, AssetT>(host);

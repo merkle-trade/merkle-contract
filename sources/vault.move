@@ -57,6 +57,8 @@ module merkle::vault {
     #[test_only]
     use aptos_framework::aptos_account;
     #[test_only]
+    use aptos_framework::account;
+    #[test_only]
     use std::string;
     #[test_only]
     use merkle::vault_type;
@@ -85,7 +87,9 @@ module merkle::vault {
     #[test_only]
     fun call_test_setting(host: &signer, aptos_framework: &signer) {
         timestamp::set_time_has_started_for_testing(aptos_framework);
-        aptos_account::create_account(address_of(host));
+        if (!account::exists_at(address_of(host))) {
+            aptos_account::create_account(address_of(host));
+        };
 
         register_vault<vault_type::CollateralVault, TEST_USDC>(host);
         register_vault<vault_type::HouseLPVault, TEST_USDC>(host);
@@ -100,7 +104,9 @@ module merkle::vault {
     /// Test initialize
     fun T_register(host: &signer, aptos_framework: &signer) {
         timestamp::set_time_has_started_for_testing(aptos_framework);
-        aptos_account::create_account(address_of(host));
+        if (!account::exists_at(address_of(host))) {
+            aptos_account::create_account(address_of(host));
+        };
 
         register_vault<vault_type::CollateralVault, TEST_USDC>(host);
 
@@ -113,7 +119,9 @@ module merkle::vault {
     /// Test initialize
     fun T_register_not_allowed(host: &signer, aptos_framework: &signer){
         timestamp::set_time_has_started_for_testing(aptos_framework);
-        aptos_account::create_account(address_of(host));
+        if (!account::exists_at(address_of(host))) {
+            aptos_account::create_account(address_of(host));
+        };
 
         register_vault<vault_type::CollateralVault, TEST_USDC>(host);
     }

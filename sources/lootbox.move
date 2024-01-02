@@ -6,27 +6,38 @@ module merkle::lootbox {
     use aptos_framework::account::new_event_handle;
     use aptos_framework::event;
     use aptos_framework::event::EventHandle;
+    use merkle::gear;
+    use merkle::pMKL;
+    use merkle::random;
+    use merkle::gear_calc;
+    use merkle::shard_token;
 
     // <-- FRIEND ----->
     friend merkle::profile;
+    friend merkle::managed_lootbox;
 
     /// When signer is not owner of module
     const E_NOT_AUTHORIZED: u64 = 1;
-
     /// When call function with invalid tier
     const E_INVALID_TIER: u64 = 2;
+    /// When open a lootbox with 0 amount
+    const E_NO_LOOTBOX: u64 = 3;
 
     struct LootBoxConfig has key {
         // start from 0
         max_tier: u64
     }
 
-    struct UsersLootBox has key {
+    struct UsersLootBox has key { // pre season lootbox
         users: table::Table<address, vector<u64>>
     }
 
     struct UserLootBoxEvent has key {
         loot_box_events: EventHandle<LootBoxEvent>
+    }
+
+    struct UserLootBoxOpenEvent has key {
+        loot_box_open_events: EventHandle<LootBoxOpenEvent>
     }
 
     struct LootBoxEvent has drop, store {
@@ -36,7 +47,16 @@ module merkle::lootbox {
         lootbox: vector<u64>
     }
 
+    struct LootBoxOpenEvent has drop, store {
+        user: address,
+        tier: u64,
+    }
+
     struct AdminCapability has copy, store, drop {}
+
+    public fun dummy() {
+
+    }
 
     fun init_module(_admin: &signer) {
         assert!(address_of(_admin) == @merkle, E_NOT_AUTHORIZED);
@@ -51,6 +71,94 @@ module merkle::lootbox {
 
         move_to(_admin, UserLootBoxEvent {
             loot_box_events: new_event_handle<LootBoxEvent>(_admin)
+        })
+    }
+
+    public fun initialize_module(_admin: &signer) {
+        assert!(address_of(_admin) == @merkle, E_NOT_AUTHORIZED);
+
+        move_to(_admin, UserLootBoxOpenEvent {
+            loot_box_open_events: new_event_handle<LootBoxOpenEvent>(_admin)
+        })
+    }
+
+    fun mint_pMKL_rand(_user_addr: address, _tier: u64) {
+        let min_amount: vector<u64> = vector[10000000, 21000000, 48000000, 122000000, 320000000];
+        let max_amount: vector<u64> = vector[20000000, 43000000, 100000000, 242000000, 640000000];
+        let amount = random::get_random_between(
+          *vector::borrow(&min_amount, _tier),
+            *vector::borrow(&max_amount, _tier)
+        );
+        pMKL::mint_pmkl(_user_addr, amount);
+    }
+
+    fun mint_gear_rand(_user: &signer, _tier: u64) {
+        let is_appear = random::get_random_between(1, 100) <= 40; // 40%
+        if (!is_appear) {
+            return
+        };
+        let gear_tier = 0;
+        let num = random::get_random_between(1, 100);
+        if (_tier == 0) {
+            gear_tier = if (num <= 90) 0 else 1;
+        } else if (_tier == 1) {
+            gear_tier = if (num <= 30) 0 else 1;
+        } else if (_tier == 2) {
+            gear_tier = if (num <= 10) 0 else if (num <= 70) 1 else 2;
+        } else if (_tier == 3) {
+            gear_tier = if (num <= 40) 1 else if (num <= 86) 2 else 3;
+        } else if (_tier == 4) {
+            gear_tier = if (num <= 65) 2 else if (num <= 95) 3 else 4;
+        };
+        gear::mint_rand(_user, gear_tier);
+    }
+
+    fun mint_shard_rand(_user_addr: address, _tier: u64) {
+        let (min_shard, max_shard) = gear_calc::calc_lootbox_shard_range(_tier);
+        let shard_amount = random::get_random_between(min_shard, max_shard);
+        shard_token::mint(_user_addr, shard_amount);
+    }
+
+    public fun open_lootbox_admin_cap_rand(_admin_cap: &AdminCapability, _user_addr: address, _tier: u64)
+    acquires UsersLootBox, UserLootBoxOpenEvent {
+        let loot_box_info = borrow_global_mut<UsersLootBox>(@merkle);
+        assert!(table::contains(&loot_box_info.users, _user_addr), E_NO_LOOTBOX);
+        let lootbox = table::borrow_mut(&mut loot_box_info.users, _user_addr);
+        let box = vector::borrow_mut(lootbox, _tier);
+        assert!(*box > 0, E_NO_LOOTBOX);
+        *box = *box - 1;
+
+        // no signer, cannot mint gears
+        // TODO: create signer from resource account, mint gear, transfer to user
+        mint_pMKL_rand(_user_addr, _tier);
+        mint_shard_rand(_user_addr, _tier);
+
+        event::emit_event(&mut borrow_global_mut<UserLootBoxOpenEvent>(@merkle).loot_box_open_events, LootBoxOpenEvent {
+            user: _user_addr,
+            tier: _tier,
+        })
+    }
+
+    /// called by entry function
+    public(friend) fun open_lootbox_rand(_user: &signer, _tier: u64) acquires LootBoxConfig, UsersLootBox, UserLootBoxOpenEvent {
+        let loot_box_config = borrow_global<LootBoxConfig>(@merkle);
+        assert!(_tier <= loot_box_config.max_tier, E_INVALID_TIER);
+
+        let user_addr = address_of(_user);
+        let loot_box_info = borrow_global_mut<UsersLootBox>(@merkle);
+        assert!(table::contains(&loot_box_info.users, user_addr), E_NO_LOOTBOX);
+        let lootbox = table::borrow_mut(&mut loot_box_info.users, user_addr);
+        let box = vector::borrow_mut(lootbox, _tier);
+        assert!(*box > 0, E_NO_LOOTBOX);
+        *box = *box - 1;
+
+        mint_pMKL_rand(user_addr, _tier);
+        mint_shard_rand(user_addr, _tier);
+        mint_gear_rand(_user, _tier);
+
+        event::emit_event(&mut borrow_global_mut<UserLootBoxOpenEvent>(@merkle).loot_box_open_events, LootBoxOpenEvent {
+            user: address_of(_user),
+            tier: _tier,
         })
     }
 
@@ -76,10 +184,10 @@ module merkle::lootbox {
 
     public(friend) fun emit_loot_box_events(_user_address: address, initial_loot_box: vector<u64>, latest_loot_box: vector<u64>)
     acquires UserLootBoxEvent, LootBoxConfig {
-        let i = 0;
         let loot_box_gained: vector<u64> = vector[];
         let loot_box_config = borrow_global<LootBoxConfig>(@merkle);
-
+        let total_gained = 0;
+        let i = 0;
         while(true) {
             if (i > loot_box_config.max_tier) {
                 break
@@ -91,14 +199,17 @@ module merkle::lootbox {
                     initial = *vector::borrow(&initial_loot_box, i);
                 };
                 gained = *vector::borrow(&latest_loot_box, i) - initial;
+                total_gained = total_gained + gained;
             };
             vector::push_back(&mut loot_box_gained, gained);
             i = i + 1;
         };
-        event::emit_event(&mut borrow_global_mut<UserLootBoxEvent>(@merkle).loot_box_events, LootBoxEvent {
-            user: _user_address,
-            lootbox: loot_box_gained
-        })
+        if (total_gained > 0) {
+            event::emit_event(&mut borrow_global_mut<UserLootBoxEvent>(@merkle).loot_box_events, LootBoxEvent {
+                user: _user_address,
+                lootbox: loot_box_gained
+            })
+        };
     }
 
     public fun mint_mission_lootboxes(_admin: &signer, _user_addr: address, _tier: u64, _amount: u64)
@@ -159,7 +270,8 @@ module merkle::lootbox {
 
     #[test_only]
     use aptos_framework::timestamp;
-
+    #[test_only]
+    use aptos_framework::account;
     #[test_only]
     use aptos_framework::aptos_account;
 
@@ -171,7 +283,9 @@ module merkle::lootbox {
     #[test_only]
     fun call_test_setting(host: &signer, aptos_framework: &signer) {
         timestamp::set_time_has_started_for_testing(aptos_framework);
-        aptos_account::create_account(address_of(host));
+        if (!account::exists_at(address_of(host))) {
+            aptos_account::create_account(address_of(host));
+        };
         init_module(host);
     }
 

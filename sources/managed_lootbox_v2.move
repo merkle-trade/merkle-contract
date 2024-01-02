@@ -1,7 +1,7 @@
-module merkle::managed_lootbox {
+module merkle::managed_lootbox_v2 {
     use std::vector;
     use std::signer::address_of;
-    use merkle::lootbox::{Self, AdminCapability};
+    use merkle::lootbox_v2::{Self, AdminCapability};
 
     /// When signer is not owner of module
     const E_NOT_AUTHORIZED: u64 = 1;
@@ -24,10 +24,10 @@ module merkle::managed_lootbox {
         assert!(address_of(_admin) == @merkle, E_NOT_AUTHORIZED);
         if (!exists<AdminCapabilityStore>(address_of(_admin))) {
             move_to(_admin, AdminCapabilityStore{
-                admin_cap: lootbox::generate_admin_cap(_admin)
+                admin_cap: lootbox_v2::generate_admin_cap(_admin)
             });
         };
-        let admin_cap = lootbox::generate_admin_cap(_admin);
+        let admin_cap = lootbox_v2::generate_admin_cap(_admin);
 
         if (!exists<AdminCapabilityCandidate>(address_of(_admin))) {
             move_to(_admin, AdminCapabilityCandidate {
@@ -71,36 +71,28 @@ module merkle::managed_lootbox {
         move_from<AdminCapabilityStore>(target_address);
     }
 
-    entry fun open_lootbox(_user: &signer, _tier: u64) {
-        lootbox::open_lootbox_rand(_user, _tier);
+    public entry fun initialize_module(_admin: &signer) {
+        lootbox_v2::initialize_module(_admin);
     }
 
-    public entry fun open_lootbox_admin_cap(_admin: &signer, _user_addr: address, _tier: u64) acquires AdminCapabilityStore {
-        let admin_cap_store = borrow_global<AdminCapabilityStore>(address_of(_admin));
-        lootbox::open_lootbox_admin_cap_rand(&admin_cap_store.admin_cap, _user_addr, _tier);
+    entry fun open_lootbox(_user: &signer, _tier: u64, _season: u64) {
+        lootbox_v2::open_lootbox_rand(_user, _tier, _season);
     }
 
-    public entry fun mint_mission_lootboxes(_admin: &signer, _user_addr: address, _lootbox: u64, _amount: u64) {
-        lootbox::mint_mission_lootboxes(_admin, _user_addr, _lootbox, _amount);
-    }
-
-    public entry fun mint_mission_lootboxes_admin_cap(_admin: &signer, _user_addr: address, _lootbox: u64, _amount: u64)
+    public entry fun mint_mission_lootboxes_admin(_admin: &signer, _user_addr: address, _lootbox: u64, _amount: u64)
     acquires AdminCapabilityStore {
         let admin_cap_store = borrow_global<AdminCapabilityStore>(address_of(_admin));
-        lootbox::mint_mission_lootboxes_admin_cap(&admin_cap_store.admin_cap, _user_addr, _lootbox, _amount);
-    }
-
-    public entry fun increase_max_tier(_admin: &signer, _amount: u64){
-        lootbox::increase_max_tier(_admin, _amount);
-    }
-
-    public entry fun initialize_module(_admin: &signer) {
-        lootbox::initialize_module(_admin);
+        lootbox_v2::mint_mission_lootboxes_admin(&admin_cap_store.admin_cap, _user_addr, _lootbox, _amount);
     }
 
     #[view]
-    public fun get_user_loot_boxes(_user_address: address): vector<u64> {
+    public fun get_user_lootboxes(_user_address: address, _season: u64): vector<u64> {
         // (bronze, silver, gold, platinum, diamond)
-        lootbox::get_user_loot_boxes(_user_address)
+        lootbox_v2::get_user_lootboxes(_user_address, _season)
+    }
+
+    #[view]
+    public fun get_user_all_lootboxes(_user_address: address): vector<lootbox_v2::LootBoxEvent> {
+        lootbox_v2::get_user_all_lootboxes(_user_address)
     }
 }

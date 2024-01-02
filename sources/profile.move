@@ -6,8 +6,9 @@ module merkle::profile {
     use aptos_framework::account::new_event_handle;
     use aptos_framework::event::{Self, EventHandle};
     use aptos_framework::timestamp;
+    use merkle::gear;
     use merkle::safe_math_u64::safe_mul_div;
-    use merkle::lootbox;
+    use merkle::lootbox_v2;
 
     // <-- FRIEND ----->
     friend merkle::trading;
@@ -37,6 +38,8 @@ module merkle::profile {
         /// key: user address, value: daily boost info
         daily_boost_info: table::Table<address, vector<u64>>
     }
+
+    // events
 
     struct ProfileEvent has key {
         increase_xp_events: EventHandle<IncreaseXPEvent>
@@ -97,17 +100,17 @@ module merkle::profile {
 
         move_to(_admin, BoostEvent {
             increase_boost_events: new_event_handle<IncreaseBoostEvent>(_admin)
-        })
+        });
     }
 
-    public(friend) fun increase_xp(_user_address: address, _xp: u64) acquires UserInfo, ClassInfo, ProfileEvent {
-        let initial_loot_box = lootbox::get_user_loot_boxes(_user_address);
-        let boost_num: u64;
-        {
-            boost_num = get_boost(_user_address);
-            let boost = BOOST_PRECISION + boost_num * BOOST_PRECISION / 100;
-            _xp = safe_mul_div(_xp, boost, BOOST_PRECISION);
-        };
+    public(friend) fun increase_xp<PairType>(_user_address: address, _xp: u64) acquires UserInfo, ClassInfo, ProfileEvent {
+        // get_boost
+        let gear_boost = gear::get_xp_boost_effect<PairType>(_user_address, true);
+        let daily_boost: u64 = get_boost(_user_address);
+        let boost = BOOST_PRECISION + (daily_boost * BOOST_PRECISION / 100 + gear_boost);
+        _xp = safe_mul_div(_xp, boost, BOOST_PRECISION);
+
+        let initial_lootbox = lootbox_v2::get_user_current_season_lootboxes(_user_address);
         let user_info = borrow_global_mut<UserInfo>(@merkle);
         if (!table::contains(&user_info.level_info, _user_address)) {
             table::add(&mut user_info.level_info, _user_address, LevelInfo {
@@ -115,6 +118,7 @@ module merkle::profile {
                 xp: 0
             });
         };
+
         let level_info = table::borrow_mut(&mut user_info.level_info, _user_address);
         let xp_from = level_info.xp;
         let level_from = level_info.level;
@@ -127,17 +131,17 @@ module merkle::profile {
                 // level up
                 level_info.level = level_info.level + 1;
                 level_info.xp = level_info.xp - required_xp;
-                lootbox::mint_lootbox(_user_address, class, 1)
+                lootbox_v2::mint_lootbox(_user_address, class, 1)
             } else {
                 break
             };
         };
-        let latest_loot_box = lootbox::get_user_loot_boxes(_user_address);
+        let latest_lootbox = lootbox_v2::get_user_current_season_lootboxes(_user_address);
         let (class_to, required_xp_to) = get_level_class(level_info.level);
-        lootbox::emit_loot_box_events(_user_address, initial_loot_box, latest_loot_box);
+        lootbox_v2::emit_lootbox_events(_user_address, initial_lootbox, latest_lootbox);
         event::emit_event(&mut borrow_global_mut<ProfileEvent>(@merkle).increase_xp_events, IncreaseXPEvent {
             user: _user_address,
-            boosted: boost_num,
+            boosted: boost,
             gained_xp: _xp,
             xp_from,
             level_from,
@@ -262,6 +266,13 @@ module merkle::profile {
 
     #[test_only]
     use aptos_framework::aptos_account;
+    #[test_only]
+    use aptos_framework::account;
+    #[test_only]
+    use merkle::season;
+
+    #[test_only]
+    struct TEST_USDC {}
 
     #[test_only]
     public fun init_module_for_test(host: &signer) {
@@ -271,9 +282,12 @@ module merkle::profile {
     #[test_only]
     fun call_test_setting(host: &signer, aptos_framework: &signer) {
         timestamp::set_time_has_started_for_testing(aptos_framework);
-        aptos_account::create_account(address_of(host));
+        if (!account::exists_at(address_of(host))) {
+            aptos_account::create_account(address_of(host));
+        };
         init_module(host);
-        lootbox::init_module_for_test(host);
+        lootbox_v2::init_module_for_test(host);
+        season::initialize_module(host);
     }
 
     #[test(host = @merkle, aptos_framework = @aptos_framework)]
@@ -300,14 +314,14 @@ module merkle::profile {
             assert!(class == 0, 0);
             assert!(required_xp == 300000000, 0);
         };
-        increase_xp(address_of(host), 900000000);
+        increase_xp<TEST_USDC>(address_of(host), 900000000);
         {
             let user_info = borrow_global<UserInfo>(address_of(host));
             let level_info = table::borrow(&user_info.level_info, address_of(host));
             assert!(level_info.level == 4, 0);
         };
 
-        increase_xp(address_of(host), 1300000000);
+        increase_xp<TEST_USDC>(address_of(host), 1300000000);
         {
             let user_info = borrow_global<UserInfo>(address_of(host));
             let level_info = table::borrow(&user_info.level_info, address_of(host));
@@ -323,7 +337,7 @@ module merkle::profile {
     #[test(host = @merkle, aptos_framework = @aptos_framework)]
     fun T_max_class_test(host: &signer, aptos_framework: &signer) acquires ClassInfo, UserInfo, ProfileEvent {
         call_test_setting(host, aptos_framework);
-        increase_xp(address_of(host), 121500000000); // level 81
+        increase_xp<TEST_USDC>(address_of(host), 121500000000); // level 81
         {
             let user_info = borrow_global<UserInfo>(address_of(host));
             let level_info = table::borrow(&user_info.level_info, address_of(host));
@@ -332,7 +346,7 @@ module merkle::profile {
             assert!(class == 4, 0);
             assert!(required_xp == 4800000000, 0);
         };
-        increase_xp(address_of(host), 4900000000); // level 82
+        increase_xp<TEST_USDC>(address_of(host), 4900000000); // level 82
         {
             let user_info = borrow_global<UserInfo>(address_of(host));
             let level_info = table::borrow(&user_info.level_info, address_of(host));
@@ -342,7 +356,7 @@ module merkle::profile {
             assert!(class == 4, 0);
             assert!(required_xp == 4800000000, 0);
         };
-        let lootboxes = lootbox::get_user_loot_boxes(address_of(host));
+        let lootboxes = lootbox_v2::get_user_current_season_lootboxes(address_of(host));
         assert!(*vector::borrow(&lootboxes, 0) == 5, 0);
         assert!(*vector::borrow(&lootboxes, 1) == 10, 0);
         assert!(*vector::borrow(&lootboxes, 2) == 35, 0);

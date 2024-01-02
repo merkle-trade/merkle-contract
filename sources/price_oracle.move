@@ -2,6 +2,7 @@ module merkle::price_oracle {
     use std::signer;
     use std::vector;
     use aptos_framework::timestamp;
+    use merkle::pair_types;
     use merkle::pyth_scripts;
     use merkle::switchboard_scripts;
     use merkle::safe_math_u64::{abs, max, min, safe_mul_div, exp};
@@ -13,6 +14,8 @@ module merkle::price_oracle {
     const E_NOT_AUTHORIZED: u64 = 0;
     /// When Price is also 0 and there is no Switchboard value
     const E_NO_VALUE_NO_SWITCHBOARD: u64 = 1;
+    /// When the pyth identifier does not exist
+    const E_PYTH_IDENTIFIER_DOES_NOT_EXIST: u64 = 2;
 
     struct PriceOracleConfig<phantom PairType> has key, drop {
         /// price update delay timeout
@@ -195,6 +198,15 @@ module merkle::price_oracle {
         data_record.value = value;
         data_record.updated_at = timestamp::now_seconds();
         data_record.pyth_vaa = pyth_vaa;
+    }
+
+    public fun get_price_for_random(): u64 acquires PriceOracleConfig {
+        if (!exists<PriceOracleConfig<pair_types::ETH_USD>>(@merkle)) {
+            return 0 // for test
+        };
+        let price_oracle_config = borrow_global<PriceOracleConfig<pair_types::ETH_USD>>(@merkle);
+        assert!(!vector::is_empty(&price_oracle_config.pyth_price_identifier), E_PYTH_IDENTIFIER_DOES_NOT_EXIST);
+        pyth_scripts::get_price_for_random(price_oracle_config.pyth_price_identifier)
     }
 
     /* test */
