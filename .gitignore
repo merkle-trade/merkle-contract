@@ -6,3 +6,4 @@
 .vscode/
 docs/
 build/
+output.json

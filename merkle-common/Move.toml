@@ -1,0 +1,19 @@
+[package]
+name = 'merkle-common'
+version = '1.0.0'
+
+#[addresses]
+#std = "0x1"
+#aptos_std = "0x1"
+#aptos_framework = "0x1"
+#merkle = "0x5ae6789dd2fec1a9ec9cccfb3acaf12e93d432f0a3a42c92fe1a9d490b7bbc06"
+
+[addresses]
+std = "0x1"
+aptos_std = "0x1"
+aptos_framework = "0x1"
+merkle = "0xf4fefcfc649f2bf317ce1de7a3f6916cb7a5db049e7ab3d1729534bb09343f03"
+
+[dependencies]
+AptosFramework = { git = 'https://github.com/aptos-labs/aptos-core.git', subdir = 'aptos-move/framework/aptos-framework', rev = '351918d1c8ab13db2b586851c480df1036593cfb' }
+AptosStdlib = { git = "https://github.com/aptos-labs/aptos-core.git", subdir = "aptos-move/framework/aptos-stdlib/", rev = "351918d1c8ab13db2b586851c480df1036593cfb" }

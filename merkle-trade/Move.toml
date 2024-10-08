@@ -1,0 +1,31 @@
+[package]
+name = 'merkle'
+version = '1.0.0'
+
+#[addresses]
+#std = "0x1"
+#aptos_std = "0x1"
+#aptos_framework = "0x1"
+#merkle = "0x5ae6789dd2fec1a9ec9cccfb3acaf12e93d432f0a3a42c92fe1a9d490b7bbc06"
+#switchboard = "0x7d7e436f0b2aafde60774efb26ccc432cf881b677aca7faaf2a01879bd19fb8"
+#pyth = "0x7e783b349d3e89cf5931af376ebeadbfab855b3fa239b7ada8f5a92fbea6b387"
+#deployer = "0xb31e712b26fd295357355f6845e77c888298636609e93bc9b05f0f604049f434"
+#wormhole = "0x5bc11445584a763c1fa7ed39081f1b920954da14e04b32440cba863d03e19625"
+
+[addresses]
+std = "0x1"
+aptos_std = "0x1"
+aptos_framework = "0x1"
+merkle = "0xf4fefcfc649f2bf317ce1de7a3f6916cb7a5db049e7ab3d1729534bb09343f03"
+pyth = "0x7e783b349d3e89cf5931af376ebeadbfab855b3fa239b7ada8f5a92fbea6b387"
+deployer = "0xb31e712b26fd295357355f6845e77c888298636609e93bc9b05f0f604049f434"
+wormhole = "0x5bc11445584a763c1fa7ed39081f1b920954da14e04b32440cba863d03e19625"
+
+[dependencies]
+AptosFramework = { git = 'https://github.com/aptos-labs/aptos-core.git', subdir = 'aptos-move/framework/aptos-framework', rev = '351918d1c8ab13db2b586851c480df1036593cfb' }
+AptosToken = { git = "https://github.com/aptos-labs/aptos-core.git", subdir = "aptos-move/framework/aptos-token/", rev = "351918d1c8ab13db2b586851c480df1036593cfb" }
+AptosTokenObjects = { git = "https://github.com/aptos-labs/aptos-core.git", subdir = "aptos-move/framework/aptos-token-objects/", rev = "351918d1c8ab13db2b586851c480df1036593cfb" }
+AptosStdlib = { git = "https://github.com/aptos-labs/aptos-core.git", subdir = "aptos-move/framework/aptos-stdlib/", rev = "351918d1c8ab13db2b586851c480df1036593cfb" }
+Pyth = { git = "https://github.com/tauruslabs/pyth-crosschain.git", subdir = "target_chains/aptos/contracts", rev = "main" }
+merkle-token = { local = "../merkle-token" }
+merkle-common = { local = "../merkle-common" }
